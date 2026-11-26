@@ -1,0 +1,132 @@
+#!/bin/bash
+# [1] 역할
+#     연습 전용 가짜 명령. tepo/mock/run-practice.sh 가 PATH 맨 앞에 이 폴더를 넣어, 테포 스크립트가 진짜 대신 이 파일을 부르게 한다.
+#     부른 명령은 $MOCK_DIR/calls.log 에 한 줄씩 남는다. 진짜 AWS·GitHub·서버에는 아무것도 하지 않는다.
+#     가짜 gh: 저장소 만들기는 $MOCK_DIR/remote.git 에 진짜 git 빈 저장소를 만들어, push 가 실제로 일어나게 한다.
+#     맨 윗줄 #!/bin/bash : "쉬뱅(shebang)". 이 파일을 /bin/bash 프로그램으로 실행하라는 표시.
+#       #! 는 파일 맨 처음에만 쓰며, 뒤에 적힌 프로그램(위치)으로 이 파일을 실행한다.
+#
+# [2] 받는 것 → 내보내는 것
+#     gh api user → sajang,   gh repo create … → $MOCK_DIR/remote.git,   gh secret set 이름 … → secrets.log 에 이름만,   gh run list → 4242
+#
+# [3] 앞뒤 파일
+#     tepo/mock/run-practice.sh (PATH)  →  github-setup.sh, preflight.sh  →  (이 파일)
+#
+# [4] 메서드 목록
+#     구역       하는 일
+#     case       명령 글자에 따라 답하기
+#
+# [5] 먼저 알 용어
+#     case, git init --bare
+#
+# [6] 읽는 순서
+#     case
+#
+# [7] 다 읽고 확인
+#     - secret set 에서 값은 어디에 남는가? (남지 않는다. 이름만 secrets.log 에)
+#     - 연습 결과의 "GitHub 에 올라간 파일" 목록은 어디서 읽는가? (remote.git)
+#
+# [0] 코드만 모아 보기 — 이 파일에서 실제로 실행되는 줄 전체. 아래 본문에서 ▼ 실행 코드 [번호] 를 찾으면 그 줄의 설명이 있다.
+#     [1] D="${MOCK_DIR:?}"; echo "gh $*" >> "$D/calls.log"
+#     [2] args=" $* "
+#     [3] case "$args" in
+#     [4]   *" --version "*) echo "gh version (가짜·연습용)" ;;
+#     [5]   *" auth status "*|*" auth setup-git "*) : ;;
+#     [6]   *" api user "*) echo sajang ;;
+#     [7]   *" repo view "*"--json url "*) echo "https://github.com/sajang/ai-publisher" ;;
+#     [8]   *" repo view "*"--json nameWithOwner "*) echo "sajang/ai-publisher" ;;
+#     [9]   *" repo view "*) [ -f "$D/repo" ] ;;
+#     [10]   *" repo create "*) git init -q --bare "$D/remote.git"; git remote add origin "$D/remote.git"; touch "$D/r…
+#     [11]   *" secret set "*) [[ "$args" == *" --body "* ]] || cat >/dev/null; echo "secret $3" >> "$D/secrets.log" ;;
+#     [12]   *" run list "*) echo 4242 ;;
+#     [13]   *" run watch "*) : ;;
+#     [14]   *" run view "*) echo "https://github.com/sajang/ai-publisher/actions/runs/4242" ;;
+#     [15]   *) echo "가짜 gh: 모르는 명령 $*" >&2; exit 1 ;;
+#     [16] esac
+
+# ┌── 설명 ──────────────────────────────────
+# │ ▶ 이 줄이 하는 일: 연습 기록 폴더를 D 에 담고, 불린 gh 명령 전체를 calls.log 에 적는다.
+# └── ▼ 실행 코드 [1] ───────────────
+D="${MOCK_DIR:?}"; echo "gh $*" >> "$D/calls.log"
+
+# ┌── 설명 ──────────────────────────────────
+# │ ▶ 이 줄이 하는 일: 받은 값 전체를 앞뒤에 띄어쓰기를 붙여 한 글자열로. (" auth status " 처럼 낱말 단위로 찾기 쉽게)
+# └── ▼ 실행 코드 [2] ───────────────
+args=" $* "
+
+# ┌── 설명 ──────────────────────────────────
+# │ ▶ 이 줄이 하는 일: 명령 글자에 따라 가짜 대답을 고른다.
+# └── ▼ 실행 코드 [3] ───────────────
+case "$args" in
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: gh --version → 가짜 버전 글.
+  # └── ▼ 실행 코드 [4] ───────────────
+  *" --version "*) echo "gh version (가짜·연습용)" ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 로그인 확인·git 설정 → 아무것도 안 하고 성공.
+  # │   | : case 에서 "또는".
+  # │   : : 아무것도 안 하는 명령(늘 성공).
+  # └── ▼ 실행 코드 [5] ───────────────
+  *" auth status "*|*" auth setup-git "*) : ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 내 GitHub 아이디 묻기 → sajang (가짜 아이디).
+  # └── ▼ 실행 코드 [6] ───────────────
+  *" api user "*) echo sajang ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 저장소 주소 묻기 → https://github.com/sajang/ai-publisher
+  # └── ▼ 실행 코드 [7] ───────────────
+  *" repo view "*"--json url "*) echo "https://github.com/sajang/ai-publisher" ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 저장소 "주인/이름" 묻기 → sajang/ai-publisher
+  # └── ▼ 실행 코드 [8] ───────────────
+  *" repo view "*"--json nameWithOwner "*) echo "sajang/ai-publisher" ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 저장소가 있는지 묻기 → repo 표시 파일이 있으면 성공(있음).
+  # └── ▼ 실행 코드 [9] ───────────────
+  *" repo view "*) [ -f "$D/repo" ] ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 저장소 만들기 → 진짜 git 빈 저장소(remote.git)를 만들고 origin 으로 연결한다. 그래서 push 가 실제로 일어난다.
+  # │   git init -q --bare    : 작업 파일 없이 기록만 담는 저장소(서버 쪽 저장소 모양)를 만든다. -q = 조용히.
+  # │   git remote add origin : 올릴 곳 이름 origin 을 그 저장소로 정한다.
+  # │   touch                 : 빈 파일 만들기(저장소가 생겼다는 표시).
+  # └── ▼ 실행 코드 [10] ──────────────
+  *" repo create "*) git init -q --bare "$D/remote.git"; git remote add origin "$D/remote.git"; touch "$D/repo" ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 비밀값 저장 → 값은 읽어서 버리고, 이름만 secrets.log 에 남긴다.
+  # │   [[ … == *" --body "* ]] : --body 로 값을 줬는지 본다. 아니면 값이 입력으로 들어오므로 cat >/dev/null 로 읽어 버린다.
+  # │   $3                      : 세 번째 값 = 비밀 이름. (gh secret set 이름 …)
+  # └── ▼ 실행 코드 [11] ──────────────
+  *" secret set "*) [[ "$args" == *" --body "* ]] || cat >/dev/null; echo "secret $3" >> "$D/secrets.log" ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 실행 기록 → 가짜 번호 4242.
+  # └── ▼ 실행 코드 [12] ──────────────
+  *" run list "*) echo 4242 ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 실행 지켜보기 → 바로 성공.
+  # └── ▼ 실행 코드 [13] ──────────────
+  *" run watch "*) : ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 실행 보기 → 가짜 주소.
+  # └── ▼ 실행 코드 [14] ──────────────
+  *" run view "*) echo "https://github.com/sajang/ai-publisher/actions/runs/4242" ;;
+
+  # ┌── 설명 ──────────────────────────────────
+  # │ ▶ 이 줄이 하는 일: 그 밖의 명령 → 모른다고 알리고 실패(1). 연습에 새 gh 명령이 쓰이면 여기서 드러난다.
+  # └── ▼ 실행 코드 [15] ──────────────
+  *) echo "가짜 gh: 모르는 명령 $*" >&2; exit 1 ;;
+
+# ┌── 설명 ──────────────────────────────────
+# │ ▶ 이 줄이 하는 일: 위 case 블록의 끝 (case 를 거꾸로 쓴 말)
+# └── ▼ 실행 코드 [16] ──────────────
+esac

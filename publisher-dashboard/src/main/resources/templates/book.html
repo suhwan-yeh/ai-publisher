@@ -1,0 +1,133 @@
+<!doctype html>
+<!--/*
+  [1] 역할
+      책 상세 화면(GET /books/{id})의 템플릿이다. 책 정보·단계·점검, 사장님↔쭌 대화, 직원끼리 주고받은 말, 표지, 완성 파일, 장별 원고를 보여 준다.
+      DashboardController.book() 이 넣은 v(BookView)와 chapters(ChapterPreview 목록)를 쓴다.
+      이 파일의 주석은 타임리프 전용 주석이다(docs/용어-풀이.md 의 "타임리프 주석"). 타임리프가 HTML 을 만들 때 지우므로 브라우저(F12)에는 보이지 않는다.
+  
+  [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+      요청  GET /books/3
+      받는 것 : model  v = BookView(책 "꼬리 살랑, 첫 산책"), chapters = [1장, 2장, 3장]
+      내보내는 것 (실제 HTML 일부)
+        <img class="cover" src="/download/3/cover" alt="표지">
+        <a class="btn ghost" href="/download/3/pdf">PDF 책 (380KB)</a>
+        <b>1장. 나가기 전에 알아 둘 것</b> <span class="muted">1082자</span>
+        <div class="tag rep">교정: 판정: 수정 후 통과</div>
+        <span class="tag  peer">직원끼리</span>
+      없는 번호  GET /books/999 → 404 (이 템플릿까지 오지 않는다)
+  
+  [3] 앞뒤 파일
+      controller/DashboardController.java 의 book()  →  (이 파일)  →  fragments.html 의 head, header, stage, checks
+      내려받기 링크  →  GET /download/{id}/{kind}  →  DashboardController.download()
+  
+  [4] 메서드 목록
+      구역                  하는 일                                                흐름 번호
+      책 정보 카드           제목·부제·장르·폴더 + 단계·점검 조각                     흐름 A-④
+      사장님 ↔ 쭌 대화       v.chat() 마다 한 칸
+      직원들끼리 주고받은 말  v.teamMessages() 마다 표 한 줄, 종류 표시
+      표지                   COVER 파일이 있을 때만 <img>
+      완성 파일              파일마다 내려받기 단추 (종류 이름 + 크기)
+      장별 원고              chapters 마다 제목·글자 수·앞부분·교정 판정
+      script                15초마다 새로고침
+  
+  [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+      th:replace 에 값 넘기기 head(${…}), th:each, th:if, th:classappend, th:src="@{…}", th:href="@{…(id=…,k=…)}", ?:, T(클래스)
+  
+  [6] 읽는 순서
+      책 정보 카드 → 완성 파일 → 장별 원고 → 대화 → 직원끼리 표
+  
+  [7] 다 읽고 확인
+      - 이 화면의 <title> 은 어떻게 만들어지는가? (head 조각에 displayTitle() 을 넘긴다 → "꼬리 살랑, 첫 산책 · 1인 AI 출판사")
+      - 완성 파일 단추의 주소에서 k 값 "pdf" 는 어디서 오는가? (f.kind.name().toLowerCase())
+*/-->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<!--/* head 조각에 책 제목을 넘긴다.  결과) <title>꼬리 살랑, 첫 산책 · 1인 AI 출판사</title> */-->
+<head th:replace="~{fragments :: head(${v.book().displayTitle()})}"></head>
+<body>
+<header th:replace="~{fragments :: header}"></header>
+<main>
+  <div class="card">
+    <a href="/">← 책 목록</a>
+    <!--/* ${v.book().displayTitle()} = 제목, 없으면 폴더 이름.  결과) <h1 …>꼬리 살랑, 첫 산책</h1> */-->
+    <h1 style="margin:.3em 0 0" th:text="${v.book().displayTitle()}">제목</h1>
+    <!--/* 부제.  결과) 떨리는 마음도 괜찮아요, 천천히 함께 걷는 초보 보호자의 첫 산책 안내서 */-->
+    <div class="muted" th:text="${v.book().subtitle}"></div>
+    <div class="muted"><span th:text="${v.book().genre} ?: '장르 미정'"></span> · 폴더 <code th:text="${v.book().folder}"></code></div>
+    <div th:replace="~{fragments :: stage(${v.book()})}"></div>
+    <div th:replace="~{fragments :: checks(${v})}"></div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <b>📱 사장님 ↔ 쭌 대화</b>
+        <p class="muted" th:if="${v.chat().isEmpty()}">아직 대화가 없어요.</p>
+        <div class="tl">
+          <!--/* 이 책을 맡은 팀(세션)의 사장님 ↔ 쭌 대화. 사장님 말은 class boss, 쭌의 말은 lead. */-->
+          <div th:each="c : ${v.chat()}" class="msg" th:classappend="${c.direction.name() == 'FROM_BOSS'} ? ' boss' : ' lead'">
+            <small th:text="(${c.direction.name() == 'FROM_BOSS'} ? '사장님 · ' : '쭌 편집장 · ') + ${@fmt.time(c.at)}"></small>
+            <span class="t" th:text="${c.text}"></span>
+            <!--/* 첨부가 있는 말에만 📎 표시. */-->
+            <div th:if="${c.hasAttachments()}"><span class="att" th:text="'📎 ' + ${c.attachments}"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <b>👥 직원들끼리 주고받은 말</b>
+        <p class="muted">파란 표시 = 직원끼리 직접 의논 · 초록 표시 = 쭌에게 보고</p>
+        <table>
+          <tr><th>시각</th><th>누가 → 누구에게</th><th>내용</th></tr>
+          <!--/* 이 책을 맡은 팀의 팀원 메시지마다 한 줄. */-->
+          <tr th:each="m : ${v.teamMessages()}">
+            <td class="muted" th:text="${@fmt.time(m.at)}"></td>
+            <td style="white-space:nowrap">
+              <span th:text="${m.fromKorean()} + ' → ' + ${m.toKorean()}"></span><br>
+              <!--/*
+                종류 표시.  직원끼리 → class peer "직원끼리",  보고 → rep "보고",  제어 → ctl "종료 등",  나머지 → ctl "쭌의 지시"
+                결과 예) <span class="tag  peer">직원끼리</span>
+              */-->
+              <span class="tag" th:classappend="${m.isPeerTalk()} ? ' peer' : (${m.kind.name() == 'REPORT'} ? ' rep' : ' ctl')"
+                    th:text="${m.isPeerTalk()} ? '직원끼리' : (${m.kind.name() == 'REPORT'} ? '보고' : (${m.kind.name() == 'CONTROL'} ? '종료 등' : '쭌의 지시'))"></span>
+            </td>
+            <td th:text="${m.text}"></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div>
+      <!--/* 표지 그림 파일이 있을 때만 이 카드를 만든다. */-->
+      <div class="card" th:if="${v.book().hasFile(T(com.greendesk.publisher.domain.BookFile.Kind).COVER)}">
+        <!--/* th:src : 그림 주소.  결과) src="/download/3/cover"   브라우저가 이 주소로 GET 을 보내 그림을 받는다(inline 이라 내려받지 않고 바로 보인다). */-->
+        <b>🎨 표지</b><br><img class="cover" th:src="@{/download/{id}/cover(id=${v.book().id})}" alt="표지">
+      </div>
+      <div class="card">
+        <b>📦 완성 파일</b>
+        <p class="muted" th:if="${v.book().files.isEmpty()}">아직 없어요.</p>
+        <!--/* 완성 파일마다 단추 하나. */-->
+        <div th:each="f : ${v.book().files}" style="margin:6px 0">
+          <!--/*
+            (1) f.kind.name()          "PDF"
+            (2) .toLowerCase()         "pdf"
+            (3) @{/download/{id}/{k}(id=3,k=pdf)}  → href="/download/3/pdf"
+            (4) th:text                f.kind.label + 크기  → "PDF 책 (380KB)"   (389934바이트 / 1024 = 380)
+          */-->
+          <a class="btn ghost" th:href="@{/download/{id}/{k}(id=${v.book().id},k=${f.kind.name().toLowerCase()})}" th:text="${f.kind.label} + ' (' + ${f.sizeLabel()} + ')'"></a>
+        </div>
+      </div>
+      <div class="card">
+        <b>📘 장별 원고</b>
+        <!--/* c = ChapterPreview.  예) title "1장. 나가기 전에 알아 둘 것", chars 1082 */-->
+        <div th:each="c : ${chapters}" style="margin:10px 0">
+          <b th:text="${c.title()}"></b> <span class="muted" th:text="${c.chars()} + '자'"></span>
+          <div class="muted" th:text="${c.preview()}"></div>
+          <!--/* 교정 판정이 있을 때만.  결과) <div class="tag rep">교정: 판정: 수정 후 통과</div> */-->
+          <div th:if="${c.review()}" class="tag rep" th:text="'교정: ' + ${c.review()}"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<!--/* 15초 뒤, 이 탭을 보고 있으면 새로고침(GET /books/3 을 다시). */-->
+<script>setTimeout(function(){ if(!document.hidden) location.reload(); }, 15000);</script>
+</body>
+</html>

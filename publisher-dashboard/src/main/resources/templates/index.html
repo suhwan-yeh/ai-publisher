@@ -1,0 +1,132 @@
+<!doctype html>
+<!--/*
+  [1] 역할
+      첫 화면(GET /)의 템플릿이다. 새 책 주문 폼, 책 목록(책마다 단계·점검), 사무실·회의실 링크를 보여 준다.
+      DashboardController.index() 가 model 에 넣은 값(books, active, root, transcripts, booksFound, transcriptsFound)과
+      flash 값(error, draft)을 쓴다.
+      이 파일의 주석은 타임리프 전용 주석이다(docs/용어-풀이.md 의 "타임리프 주석"). 타임리프가 HTML 을 만들 때 지우므로 브라우저(F12)에는 보이지 않는다.
+  
+  [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+      받는 것 : model  books = [BookView 5개], active = [최근 2분 안 활동 팀원], booksFound = true, transcriptsFound = true
+      내보내는 것 (실제로 만들어진 HTML 일부)
+        <form class="card order" method="post" action="/order">
+        …
+        <a href="/books/3"><b style="font-size:18px">꼬리 살랑, 첫 산책</b></a>
+        <div class="muted"><span>실용서</span> · <span>3장, 2934자</span> · <span>6시간 전</span> 업데이트</div>
+        <div class="muted">점검 3 / 4 통과</div>
+        <a class="btn ghost" href="/download/3/pdf">📕 PDF</a>
+  
+  [3] 앞뒤 파일
+      controller/DashboardController.java 의 index()  →  (이 파일)  →  templates/fragments.html (head, header, stage, checks)
+      주문 폼  →  POST /order  →  controller/ChatPageController.java 의 order()  (흐름 C)
+  
+  [4] 메서드 목록
+      구역                  하는 일                                                     흐름 번호
+      주문 폼               POST /order 로 주문 글을 보낸다                              흐름 C-①
+      안내 카드             책 폴더·대화 기록 폴더가 없을 때만 보인다
+      사무실·회의실 링크
+      지금 일하는 직원      active 가 있을 때만
+      책 목록               books 의 책마다 카드 하나 (제목, 장르, 단계, 점검, 내려받기)    흐름 A-④
+      다시 읽기 폼          POST /rescan                                                흐름 C
+      script               10초마다 화면 새로고침 (주문 칸에 쓰는 중이면 미룸)
+  
+  [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+      th:replace, th:action="@{…}", th:text, th:if, th:each, th:href, ?: (값이 없으면 대신 쓸 값), T(클래스), ${@fmt.ago()}
+  
+  [6] 읽는 순서
+      주문 폼 → 책 목록(th:each) → 다시 읽기 폼 → script
+  
+  [7] 다 읽고 확인
+      - 쭌이 출근하지 않았을 때 주문하면 이 화면의 어느 줄이 오류 문장을 보여 주는가? (<div class="err" th:if="${error}">)
+      - 책 카드의 PDF 단추는 언제 만들어지는가? (th:if 의 hasFile(PDF) 가 참일 때)
+*/-->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<!--/*
+  th:replace="~{fragments :: head('책 목록')}"
+    뜻     : 이 요소를 fragments.html 의 head 조각으로 통째로 바꾼다. '책 목록' 을 title 값으로 넘긴다.
+    결과   : <head> … <title>책 목록 · 1인 AI 출판사</title> … </head>
+*/-->
+<head th:replace="~{fragments :: head('책 목록')}"></head>
+<body>
+<header th:replace="~{fragments :: header}"></header>
+<main>
+  <!--/*
+    [흐름 C-①] 주문 폼. 이 폼은 자바스크립트 없이 브라우저가 직접 보낸다.
+      method="post"          POST 방식
+      th:action="@{/order}"  보낼 주소.  결과) action="/order"
+    보내기를 누르면 실제 요청) POST /order   Content-Type: application/x-www-form-urlencoded   몸통 text=…
+  */-->
+  <form class="card order" method="post" th:action="@{/order}">
+    <b>📝 새 책 주문하기</b>
+    <p class="muted" style="margin:2px 0 8px">쭌 편집장에게 평소 말투로 적어 보내세요. 보내면 대화방으로 넘어가요.</p>
+    <!--/*
+      name="text" : 폼 값의 이름. 서버의 @RequestParam String text 가 이 이름으로 꺼낸다.
+      required    : 비어 있으면 브라우저가 보내지 않고 안내를 띄운다.
+      th:text="${draft}" : 주문이 실패해 돌아왔을 때 flash 의 draft(적었던 글)를 다시 채운다. 처음에는 비어 있다.
+    */-->
+    <textarea name="text" rows="3" required th:text="${draft}" placeholder="예) 요즘 퇴근하고 집에서 운동하는 사람 많잖아. 운동 처음 해 보는 사람이 부담 없이 읽을 책 하나 만들어 볼까?"></textarea>
+    <!--/*
+      flash 의 error 가 있을 때만 생긴다.
+      예) <div class="err">쭌이 출근 전이에요. 우분투 창에서 '출근'을 입력한 뒤 다시 보내 주세요.</div>
+    */-->
+    <div class="err" th:if="${error}" th:text="${error}"></div>
+    <button class="btn" type="submit">쭌에게 보내기</button>
+  </form>
+  <!--/* 책 폴더나 대화 기록 폴더 중 하나라도 없으면 안내 카드를 보인다. (or = 또는, ! = 아니다) */-->
+  <div class="card" th:if="${!booksFound or !transcriptsFound}">
+    <b>⚠️ 아직 읽을 기록이 없어요</b>
+    <p class="muted" th:if="${!booksFound}">책 폴더가 없어요: <code th:text="${root} + '/books'"></code> — 출판사 설치(3단계) 후 첫 책을 주문하면 생겨요.</p>
+    <p class="muted" th:if="${!transcriptsFound}">대화 기록 폴더가 없어요: <code th:text="${transcripts}"></code> — 출근(claude 실행) 후 생겨요. Windows의 IntelliJ에서 실행했다면 README의 경로 설정을 보세요.</p>
+  </div>
+
+  <div class="card" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+    <b>🏢 AI 직원들이 일하는 모습 보기</b>
+    <a class="btn" href="/office">사무실 (실시간)</a>
+    <a class="btn ghost" href="/meeting">🗣 회의실</a>
+    <span class="muted">책상마다 실제 작업 화면이 보이고, 직원끼리 주고받는 메시지가 봉투로 날아가요.</span>
+  </div>
+
+  <!--/* 최근 2분 안에 활동한 팀원이 있을 때만. */-->
+  <div class="card" th:if="${!active.isEmpty()}">
+    <b>👥 지금 일하는 직원</b>
+    <span th:each="m : ${active}" style="margin-left:10px"><span class="dot"></span><span th:text="${m.koreanName()} + ' (' + ${m.role} + ')'"></span></span>
+  </div>
+
+  <!--/* 책이 하나도 없을 때만 안내. */-->
+  <div th:if="${books.isEmpty()}" class="card"><b>아직 책이 없어요.</b><p class="muted">위 칸에 “○○ 책 만들어 줘”라고 적어 보내 보세요. 텔레그램을 연결했다면 휴대폰으로 보내도 돼요.</p></div>
+
+  <!--/* [흐름 A-④] 책마다 카드 하나. v = BookView (v.book() = Book 엔티티, v.checksPassed() = 통과한 점검 수 등) */-->
+  <div class="card" th:each="v : ${books}">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div>
+        <!--/* 결과 예) <a href="/books/3"><b style="font-size:18px">꼬리 살랑, 첫 산책</b></a>   누르면 GET /books/3 (흐름 A) */-->
+        <a th:href="@{/books/{id}(id=${v.book().id})}"><b style="font-size:18px" th:text="${v.book().displayTitle()}">제목</b></a>
+        <!--/*
+          ${값} ?: '대신 쓸 값' : 값이 null 이면 오른쪽 글자를 쓴다.
+          결과 예) <span>실용서</span> · <span>3장, 2934자</span> · <span>6시간 전</span> 업데이트
+        */-->
+        <div class="muted"><span th:text="${v.book().genre} ?: '장르 미정'"></span> · <span th:text="${v.book().chapterCount} + '장, ' + ${v.book().charCount} + '자'"></span> · <span th:text="${@fmt.ago(v.book().updatedAt)}"></span> 업데이트</div>
+      </div>
+      <div class="muted" th:text="'점검 ' + ${v.checksPassed()} + ' / 4 통과'"></div>
+    </div>
+    <!--/* fragments.html 의 stage 조각에 Book 을 넘긴다. */-->
+    <div th:replace="~{fragments :: stage(${v.book()})}"></div>
+    <!--/* fragments.html 의 checks 조각에 BookView 를 넘긴다. */-->
+    <div th:replace="~{fragments :: checks(${v})}"></div>
+    <div>
+      <a class="btn" th:href="@{/books/{id}(id=${v.book().id})}">자세히 보기</a>
+      <!--/* PDF 파일이 있을 때만 단추를 만든다.  결과 예) <a class="btn ghost" href="/download/3/pdf">📕 PDF</a> */-->
+      <a class="btn ghost" th:if="${v.book().hasFile(T(com.greendesk.publisher.domain.BookFile.Kind).PDF)}" th:href="@{/download/{id}/pdf(id=${v.book().id})}">📕 PDF</a>
+      <a class="btn ghost" th:if="${v.book().hasFile(T(com.greendesk.publisher.domain.BookFile.Kind).EPUB)}" th:href="@{/download/{id}/epub(id=${v.book().id})}">📱 EPUB</a>
+    </div>
+  </div>
+  <!--/* [흐름 C] POST /rescan → 302 Location: / → GET / (지금 바로 다시 읽은 결과) */-->
+  <form method="post" th:action="@{/rescan}"><button class="btn ghost" type="submit">🔄 지금 다시 읽기</button> <span class="muted">화면은 10초마다 저절로 새로고침돼요</span></form>
+</main>
+<!--/*
+  10초 뒤 location.reload() 로 화면 전체를 새로 받는다(흐름 A 를 다시).
+  주문 칸에 글이 있거나 커서가 있으면, 또는 다른 탭을 보고 있으면 새로고침하지 않고 10초 뒤 다시 확인한다(쓰던 글이 지워지지 않게).
+*/-->
+<script>setTimeout(function r(){ var t=document.querySelector('.order textarea'); if(document.hidden || (t && (t.value || document.activeElement===t))) return setTimeout(r, 10000); location.reload(); }, 10000);</script>
+</body>
+</html>

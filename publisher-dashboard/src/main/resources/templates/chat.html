@@ -1,0 +1,65 @@
+<!doctype html>
+<!--/*
+  [1] 역할
+      대화방 화면(GET /chat)의 템플릿이다. 화면 내용은 거의 fragments.html 의 chatpanel 조각이고, chatpanel.js 를 불러온다.
+      이 파일의 주석은 타임리프 전용 주석이다(docs/용어-풀이.md 의 "타임리프 주석"). 타임리프가 HTML 을 만들 때 지우므로 브라우저(F12)에는 보이지 않는다.
+  
+  [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+      받는 것 : model  messages = [ChatMessage …], online = true/false,  (서버 모드) _csrf
+      내보내는 것 (실제 HTML 일부)
+        <div class="cp-msg  boss-m" data-id="13">
+          <small data-at="2026-11-09T10:06:14.707Z">사장님 · 11-09 10:06</small>
+          <span class="t">주제: 처음 키우는 반려식물 / 장르: 실용서</span>
+        </div>
+        …
+        <script src="/js/chatpanel.js"></script>
+  
+  [3] 앞뒤 파일
+      controller/ChatPageController.java 의 chat()  →  (이 파일)  →  fragments.html 의 header, chatpanel
+      (이 파일)의 <script>  →  static/js/chatpanel.js  →  흐름 B, B′
+  
+  [4] 메서드 목록
+      구역               하는 일                                               흐름 번호
+      <head>             CSS 두 개, (서버 모드) CSRF 토큰 meta 두 개
+      <main>             안내 글 + chatpanel 조각                               흐름 A-④
+      <script>           chatpanel.js 를 불러온다                               흐름 B 의 준비
+  
+  [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+      th:replace, th:if, th:content, ${_csrf}, <script src>
+  
+  [6] 읽는 순서
+      <head> 의 meta → <main> → <script>
+  
+  [7] 다 읽고 확인
+      - <script> 를 <head> 안으로 옮기면 chatpanel.js 의 document.getElementById('cp') 는 무엇을 돌려주는가? (null. 아직 패널이 만들어지기 전)
+      - 내 PC 모드에서 이 화면의 HTML 에 <meta name="_csrf"> 가 있는가?
+*/-->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>쭌 편집장과 대화 · 1인 AI 출판사</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/css/office.css">
+  <!-- 서버 모드(로그인)에서만 생김: fetch 로 POST 할 때 CSRF 토큰을 헤더에 실어 보냄 -->
+  <!--/*
+    ${_csrf} : Spring Security 가 켜졌을 때(서버 모드)만 있는 값. th:if 로 그때만 meta 를 만든다.
+    th:content="${_csrf.token}" : content 속성에 토큰 글자를 넣는다. chatpanel.js 의 send() 가 읽어 헤더에 싣는다.
+  */-->
+  <meta name="_csrf" th:if="${_csrf != null}" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:if="${_csrf != null}" th:content="${_csrf.headerName}">
+</head>
+<body class="night">
+<header th:replace="~{fragments :: header}"></header>
+<main class="chatpage">
+  <h1 class="muted" style="font-size:14px;margin:0 0 10px">💬 쭌 편집장과 대화 — 평소 말투로 쓰세요. 제안이 오면 버튼으로 승인·수정·거부할 수 있어요. 텔레그램으로 나눈 대화도 여기 함께 보여요.</h1>
+  <!--/* [흐름 A-④] 대화 패널 조각을 가져온다. 조각이 쓰는 messages, online 은 이 화면의 model 값이다. */-->
+  <section th:replace="~{fragments :: chatpanel}"></section>
+</main>
+<!--/*
+  <body> 맨 끝에서 불러온다. 위의 HTML 이 다 만들어진 뒤에 실행되므로 id="cp" 등을 찾을 수 있다.
+  요청) GET /js/chatpanel.js  → static/js/chatpanel.js 파일 그대로 (스프링이 static 폴더의 파일을 그대로 내준다)
+*/-->
+<script src="/js/chatpanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="관리화면 실행" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.greendesk.publisher.PublisherDashboardApplication" />
+    <module name="publisher-dashboard.main" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <envs>
+      <!-- Windows의 IntelliJ에서 (WSL 밖에서) 열었다면 아래 두 줄의 '이름'을 우분투 사용자 이름으로 바꾸고 주석(<!- - - ->)을 지우세요.
+      <env name="PUBLISHER_ROOT" value="\\wsl.localhost\Ubuntu\home\이름\my-publisher" />
+      <env name="PUBLISHER_CLAUDE_PROJECTS" value="\\wsl.localhost\Ubuntu\home\이름\.claude\projects" />
+      -->
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

@@ -1,0 +1,355 @@
+/*
+ * [1] 역할
+ *     어두운 화면(사무실, 회의실, 대화방, 로그인)의 모양과 움직임. 브라우저가 GET /css/office.css 로 받는다.
+ *     office.js·meeting.js 가 붙이는 class(.s-WORKING, .speak 등)에 따라 사람 그림이 움직이도록 정한다.
+ *     자바스크립트는 class 만 바꾸고, 실제 움직임(@keyframes)은 이 파일이 맡는다.
+ *
+ * [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+ *     받는 것  : office.js 가 바꾼 class.  예) <div class="desk s-WORKING">  (응답 JSON 의 status "WORKING")
+ *     내보내는 것: .s-WORKING .person .arm-l { animation: typeL .34s … infinite alternate; } → 팔이 0.34초마다 위아래로(타자 치는 모양)
+ *                  .s-WAITING .person .raise { display: block; … } → 손 든 팔이 보인다(허용 기다림)
+ *                  .s-OFFLINE .person { opacity: 0; … } → 사람이 사라진다(자리 비움)
+ *
+ * [3] 앞뒤 파일
+ *     templates/office.html, meeting.html, chat.html, login.html 의 <link href="/css/office.css">  →  (이 파일)
+ *     static/js/office.js, meeting.js, chatpanel.js 가 class 를 붙이고 뗀다  →  (이 파일)의 규칙이 적용된다
+ *
+ * [4] 메서드 목록
+ *     구역 (파일 안의 구역 제목 주석)          하는 일                                         class 를 붙이는 곳
+ *     사무실 전체 배치                         층, 창밖, 위쪽 막대, 경고                        office.html
+ *     편집장실 + 직원 책상                     책상 틀, 상태 표시(.pill)                        office.js buildDesk·updateDesk
+ *     장면: 모니터 + 뒷모습의 사람             상태별 사람 움직임 .s-WORKING/.s-IDLE/.s-WAITING/.s-OFFLINE   office.js updateDesk
+ *     서버실                                   테포 책상
+ *     말풍선 · 날아가는 봉투                    .bubble, .envelope, .trail, .ping               office.js bubble·fly
+ *     출근부, 확대 보기(모달)                   .roster, .modal.on                              office.js
+ *     사장실 대화 패널                          .cp-msg.boss-m/.lead-m, .decide.on, .cp-err      chatpanel.js
+ *     회의실                                   .seat.speak/.listen, .beam, .mbubble, .mrow     meeting.js
+ *     반응형, 동작 줄이기                       @media                                          브라우저 설정
+ *
+ * [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+ *     @keyframes, animation, transition, transform, CSS 변수(--c), color-mix, @media (prefers-reduced-motion)
+ *
+ * [6] 읽는 순서
+ *     장면: 모니터 + 뒷모습의 사람 → 말풍선 · 날아가는 봉투 → 사장실 대화 패널 → 회의실
+ *
+ * [7] 다 읽고 확인
+ *     - 응답 JSON 의 status 가 "WAITING" 일 때 사람 그림에서 바뀌는 것 두 가지는? (.raise 가 보이고 .arm-r 이 숨는다)
+ *     - office.js 의 d.style.setProperty('--c', p.color) 로 넣은 색은 이 파일의 어디에서 쓰이는가? (var(--c))
+ */
+/* =====================================================================
+   AI 출판사 사무실 · 회의실 · 사장실 대화 (밤의 사무실 테마)
+   외부 라이브러리 없이 CSS 애니메이션만 사용
+   ===================================================================== */
+:root {
+  --night: #0a0f1f;
+  --night2: #121a33;
+  --glass: rgba(255, 255, 255, .045);
+  --glass2: rgba(255, 255, 255, .08);
+  --edge: rgba(255, 255, 255, .10);
+  --ink: #e9ecf5;
+  --ink2: #9aa3bd;
+  --warm: #f3b27a;
+  --ok: #3ddc97;
+  --idle: #f6c35b;
+  --wait: #ff6b6b;
+  --off: #59607a;
+  --screen: #07120d;
+  --mono: "D2Coding", "JetBrains Mono", Menlo, Consolas, "Malgun Gothic", monospace;
+}
+
+body.night {
+  background:
+    radial-gradient(1200px 500px at 70% -10%, rgba(243, 178, 122, .10), transparent 60%),
+    radial-gradient(900px 600px at 0% 100%, rgba(91, 140, 255, .10), transparent 60%),
+    linear-gradient(180deg, var(--night2), var(--night));
+  background-color: var(--night);
+  color: var(--ink);
+  min-height: 100vh;
+}
+html:has(body.night) { background: #0a0f1f; }
+body.night header { background: rgba(10, 15, 31, .75); border-bottom-color: var(--edge); backdrop-filter: blur(10px); }
+body.night header b { color: var(--ink); }
+body.night header nav a { color: var(--warm); }
+body.night .muted { color: var(--ink2); }
+body.night a { color: var(--warm); }
+
+.glass {
+  background: linear-gradient(180deg, var(--glass2), var(--glass));
+  border: 1px solid var(--edge);
+  border-radius: 18px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+
+/* [구역] 사무실 화면의 큰 틀 (office.html 의 .office, .floor) */
+/* ---------- 사무실 전체 배치 ---------- */
+.office {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  gap: 18px;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 18px 16px 40px;
+}
+.floor { position: relative; padding: 18px; overflow: hidden; }
+.floor::before { /* 창밖 야경 */
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 120px; pointer-events: none; opacity: .55;
+  background:
+    linear-gradient(180deg, rgba(18, 26, 51, 0), rgba(10, 15, 31, .9)),
+    repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, .025) 22px 24px),
+    linear-gradient(0deg, #0e1530 0 40%, transparent 40%),
+    radial-gradient(2px 2px at 8% 30%, #ffe9b0, transparent), radial-gradient(2px 2px at 18% 55%, #ffd58a, transparent),
+    radial-gradient(2px 2px at 31% 38%, #fff3c4, transparent), radial-gradient(2px 2px at 47% 62%, #ffd58a, transparent),
+    radial-gradient(2px 2px at 63% 28%, #ffe9b0, transparent), radial-gradient(2px 2px at 76% 50%, #fff3c4, transparent),
+    radial-gradient(2px 2px at 88% 35%, #ffd58a, transparent), radial-gradient(2px 2px at 95% 66%, #ffe9b0, transparent);
+  animation: twinkle 6s ease-in-out infinite alternate;
+}
+@keyframes twinkle { from { opacity: .45 } to { opacity: .7 } }
+
+.topbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 16px; }
+.topbar .book { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+.topbar .book small { display: block; font-size: 12px; font-weight: 600; color: var(--ink2); letter-spacing: .04em; }
+.source { margin-left: auto; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--glass2); color: var(--ink2); }
+.source.live::before { content: "●"; color: var(--ok); margin-right: 6px; animation: blink 1.6s infinite; }
+@keyframes blink { 50% { opacity: .25 } }
+
+.stages { display: flex; flex-wrap: wrap; gap: 4px; }
+.stages span { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, .05); color: var(--ink2); border: 1px solid transparent; transition: all .6s; }
+.stages span.done { color: #ffdcbf; background: rgba(243, 178, 122, .14); }
+.stages span.now { color: #1b1206; background: var(--warm); box-shadow: 0 0 16px rgba(243, 178, 122, .7); font-weight: 800; }
+.checks4 { display: flex; gap: 6px; flex-wrap: wrap; }
+.checks4 span { font-size: 11.5px; padding: 3px 9px; border-radius: 8px; background: rgba(255, 255, 255, .05); color: var(--ink2); }
+.checks4 span.on { background: rgba(61, 220, 151, .14); color: var(--ok); }
+
+.alert { display: none; margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: rgba(255, 107, 107, .14); border: 1px solid rgba(255, 107, 107, .45); color: #ffd1d1; font-weight: 700; animation: pulseAlert 1.4s infinite; }
+.alert.on { display: block; }
+@keyframes pulseAlert { 50% { box-shadow: 0 0 0 6px rgba(255, 107, 107, .12) } }
+
+/* 편집장실 + 직원 책상 */
+.lead-room { position: relative; display: grid; place-items: center; padding: 14px 10px 6px; margin-bottom: 16px; border-radius: 16px;
+  background: radial-gradient(400px 160px at 50% 0%, rgba(243, 178, 122, .16), transparent 70%), rgba(255, 255, 255, .02); border: 1px dashed rgba(243, 178, 122, .25); }
+.lead-room > .label { position: absolute; left: 14px; top: 10px; font-size: 12px; color: #ffcf9f; letter-spacing: .08em; }
+.lead-room .desk { width: 100%; }
+#lead-slot { display: grid; grid-template-columns: minmax(0, 420px); justify-content: center; width: 100%; }
+.desks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+
+.desk { min-width: 0; position: relative; padding: 12px 12px 10px; border-radius: 16px; background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .02));
+  border: 1px solid var(--edge); cursor: pointer; transition: transform .25s, box-shadow .25s, border-color .25s; outline: none; }
+.desk:hover, .desk:focus-visible { transform: translateY(-3px); box-shadow: 0 14px 34px rgba(0, 0, 0, .45); border-color: color-mix(in srgb, var(--c) 60%, transparent); }
+.desk-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.desk-head .nm { font-weight: 800; font-size: 15px; white-space: nowrap; flex-shrink: 0; }
+.desk-head .rl { font-size: 12px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.desk-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.pill { margin-left: auto; font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 999px; background: rgba(255, 255, 255, .07); color: var(--ink2); white-space: nowrap; }
+/* 상태 class 는 office.js 의 updateDesk() 가 응답의 status 로 붙인다.  "desk s-" + a.status → "desk s-WORKING" */
+.s-WORKING .pill { background: rgba(61, 220, 151, .16); color: var(--ok); }
+.s-IDLE .pill { background: rgba(246, 195, 91, .14); color: var(--idle); }
+.s-WAITING .pill { background: rgba(255, 107, 107, .18); color: var(--wait); animation: blink 1s infinite; }
+.s-OFFLINE .pill { color: var(--off); }
+
+/* 장면: 모니터 + 뒷모습의 사람 */
+.scene { position: relative; height: 196px; border-radius: 12px; overflow: hidden;
+  background: radial-gradient(160px 90px at 50% 100%, rgba(243, 178, 122, .10), transparent 70%), linear-gradient(180deg, #10172d, #0b1122); }
+.lead-room .scene { height: 210px; }
+.lamp { position: absolute; right: 10px; top: 8px; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle, #ffd9a8 0 30%, rgba(255, 190, 120, .0) 70%); opacity: .25; transition: opacity .8s; }
+.s-WORKING .lamp, .s-WAITING .lamp { opacity: .9; animation: lampGlow 3s ease-in-out infinite; }
+@keyframes lampGlow { 50% { opacity: .6 } }
+
+.monitor { position: absolute; left: 50%; top: 12px; width: 84%; height: 112px; transform: translateX(-50%); border-radius: 8px; padding: 5px;
+  background: linear-gradient(180deg, #2a3146, #1a2033); box-shadow: 0 6px 20px rgba(0, 0, 0, .5); }
+.monitor::after { /* 받침대 */
+  content: ""; position: absolute; left: 50%; bottom: -14px; width: 26px; height: 14px; transform: translateX(-50%); background: linear-gradient(180deg, #2a3146, #161b2b); border-radius: 0 0 4px 4px; }
+.screen { position: relative; height: 100%; border-radius: 5px; overflow: hidden; background: var(--screen); box-shadow: inset 0 0 18px rgba(0, 0, 0, .9); transition: box-shadow .6s, filter .6s; }
+.screen pre { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 4px 6px; font: 7.4px/1.32 var(--mono); color: #a5f3c8; white-space: pre; overflow: hidden; text-shadow: 0 0 4px rgba(61, 220, 151, .45); }
+.lead-room .screen pre { font-size: 7.8px; }
+.screen::after { /* 주사선 */
+  content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .03) 0 1px, transparent 1px 3px); }
+.s-WORKING .screen { box-shadow: inset 0 0 18px rgba(0, 0, 0, .9), 0 0 22px color-mix(in srgb, var(--c) 55%, transparent); }
+.s-OFFLINE .screen { filter: brightness(.25) saturate(0); }
+.screen .zzz { position: absolute; inset: 0; display: none; place-items: center; color: #5b6380; font: 700 13px var(--mono); }
+.s-OFFLINE .screen .zzz { display: grid; }
+
+.person { position: absolute; left: 50%; bottom: -6px; width: 150px; height: 104px; transform: translateX(-50%); transition: transform .8s cubic-bezier(.2, .8, .2, 1), opacity .6s; }
+.person .arm-l, .person .arm-r { transform-box: fill-box; transform-origin: 50% 100%; }
+/* 작업 중: 두 팔이 서로 다른 빠르기(0.34초, 0.30초)로 위아래로 → 타자 치는 모양. */
+/* animation: 이름 시간 속도곡선 infinite(끝없이) alternate(갔다가 되돌아오기) */
+.s-WORKING .person .arm-l { animation: typeL .34s ease-in-out infinite alternate; }
+.s-WORKING .person .arm-r { animation: typeR .30s ease-in-out infinite alternate; }
+/* @keyframes 이름 { from {…} to {…} } : 움직임의 처음과 끝 모양. 위의 animation 이 이 이름을 쓴다. */
+@keyframes typeL { from { transform: translateY(0) } to { transform: translateY(-2.4px) } }
+@keyframes typeR { from { transform: translateY(-2.2px) } to { transform: translateY(0) } }
+.s-WORKING .person .head { animation: nod 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes nod { 50% { transform: translateY(1px) rotate(-1.5deg) } }
+.s-IDLE .person { transform: translateX(-50%) translateY(8px) scale(.96); }
+.s-IDLE .person .body { animation: breathe 4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes breathe { 50% { transform: scaleY(1.02) } }
+.person .raise { display: none; }
+/* 허용 기다림: 평소 숨긴 "손 든 팔"(people.js 의 .raise)을 보이고 흔든다. 오른팔은 숨긴다. */
+.s-WAITING .person .raise { display: block; animation: wave .8s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 100%; }
+.s-WAITING .person .arm-r { display: none; }
+@keyframes wave { from { transform: rotate(-6deg) } to { transform: rotate(8deg) } }
+/* 자리 비움: 사람을 투명하게(opacity 0) 아래로 내려 빈 의자만 보인다. */
+.s-OFFLINE .person { opacity: 0; transform: translateX(-50%) translateY(30px); }
+.chair { position: absolute; left: 50%; bottom: -10px; width: 120px; height: 62px; transform: translateX(-50%); border-radius: 26px 26px 6px 6px;
+  background: linear-gradient(180deg, #232a40, #151a2a); box-shadow: inset 0 2px 0 rgba(255, 255, 255, .05); }
+.mug { position: absolute; right: 16px; bottom: 16px; width: 14px; height: 14px; border-radius: 2px 2px 4px 4px; background: #e9e1d4; opacity: 0; transition: opacity .6s; }
+.mug::before { content: ""; position: absolute; left: 3px; top: -12px; width: 8px; height: 10px; border-radius: 50%; border-left: 2px solid rgba(255, 255, 255, .45); animation: steam 2s ease-in-out infinite; }
+@keyframes steam { 0% { transform: translateY(2px); opacity: 0 } 40% { opacity: .8 } 100% { transform: translateY(-6px); opacity: 0 } }
+.s-IDLE .mug { opacity: .9; }
+
+.desk-foot { margin-top: 8px; min-height: 52px; font-size: 12px; color: var(--ink2); }
+.desk-foot .task { color: #ffd6ae; font-weight: 700; }
+.desk-foot .act { display: block; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0; }
+.desk-foot .meta { display: block; font-size: 11px; }
+
+/* 서버실 (배포·서버 담당, 예: 테포) */
+.server-room { position: relative; margin-top: 16px; padding: 30px 12px 12px; border-radius: 16px; border: 1px dashed rgba(62, 198, 224, .35);
+  background: radial-gradient(500px 160px at 20% 0%, rgba(62, 198, 224, .12), transparent 70%), repeating-linear-gradient(90deg, rgba(62, 198, 224, .04) 0 2px, transparent 2px 26px); }
+.server-room > .label { position: absolute; left: 14px; top: 9px; font-size: 12px; color: #8fe3f3; letter-spacing: .08em; }
+.server-room .desks { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+/* 말풍선 · 날아가는 봉투 */
+.bubble { position: absolute; z-index: 30; max-width: 230px; padding: 7px 11px; border-radius: 12px; font-size: 12.5px; line-height: 1.45;
+  color: #1b1f2c; background: #fff7ee; box-shadow: 0 10px 26px rgba(0, 0, 0, .45); pointer-events: none;
+  animation: pop .35s cubic-bezier(.2, 1.4, .4, 1) both; }
+.bubble b { display: block; font-size: 11px; color: #9a5a2c; }
+.bubble.out { animation: fadeOut .45s ease forwards; }
+@keyframes pop { from { transform: scale(.6) translateY(6px); opacity: 0 } }
+@keyframes fadeOut { to { transform: translateY(-6px); opacity: 0 } }
+.fx { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
+/* 봉투: office.js 의 fly() 가 1초에 약 60번 transform 을 바꿔 움직인다. 이 규칙은 크기와 시작 위치만 정한다. */
+.envelope { position: absolute; left: 0; top: 0; width: 30px; height: 21px; margin: -10px 0 0 -15px; filter: drop-shadow(0 0 10px rgba(243, 178, 122, .9)); }
+.trail { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(243, 178, 122, .8); animation: trail .7s ease-out forwards; }
+@keyframes trail { to { transform: scale(.2); opacity: 0 } }
+.ping { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--warm); animation: ping .9s ease-out forwards; }
+@keyframes ping { to { transform: scale(4); opacity: 0 } }
+
+/* 출근부 */
+.roster { margin-top: 16px; padding: 12px 14px; }
+.roster table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.roster th, .roster td { padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, .06); text-align: left; }
+.roster th { font-size: 11.5px; color: var(--ink2); font-weight: 600; }
+.roster .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+/* 확대 보기(모달) */
+.modal { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; padding: 16px; background: rgba(4, 7, 16, .72); backdrop-filter: blur(6px); }
+.modal.on { display: grid; }
+.modal .box { width: min(980px, 100%); max-height: 90vh; display: flex; flex-direction: column; padding: 14px; }
+.modal .box header { position: static; display: flex; align-items: center; gap: 10px; padding: 0 0 10px; background: none; border: 0; backdrop-filter: none; }
+.modal .term { flex: 1; overflow: auto; margin: 0; padding: 14px; border-radius: 12px; background: var(--screen); color: #c9f7dd; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
+.icon-btn { margin-left: auto; border: 1px solid var(--edge); background: var(--glass2); color: var(--ink); border-radius: 10px; padding: 6px 12px; font: inherit; cursor: pointer; }
+
+/* [구역] fragments.html 의 chatpanel 조각과 chatpanel.js 가 만든 말풍선의 모양 */
+/* ---------- 사장실 대화 패널 (사무실 오른쪽, /chat 공용) ---------- */
+.boss { position: sticky; top: 72px; align-self: start; display: flex; flex-direction: column; height: calc(100vh - 96px); min-height: 520px; padding: 14px; }
+.boss-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.boss-head b { font-size: 15px; }
+.st { font-size: 11.5px; font-weight: 800; padding: 2px 9px; border-radius: 999px; }
+.st.on { background: rgba(61, 220, 151, .15); color: var(--ok); }
+.st.off { background: rgba(255, 107, 107, .15); color: var(--wait); }
+.bell { margin-left: auto; border: 0; background: none; font-size: 16px; cursor: pointer; color: var(--ink); }
+.cp-log { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin: 10px 0; padding: 4px 2px; scroll-behavior: smooth; }
+.cp-msg { max-width: 92%; padding: 8px 11px; border-radius: 14px; font-size: 13.5px; line-height: 1.55; animation: pop .3s ease both; }
+.cp-msg small { display: block; font-size: 10.5px; font-weight: 700; opacity: .7; margin-bottom: 1px; }
+.cp-msg .t { white-space: pre-wrap; }
+.cp-msg.boss-m { align-self: flex-end; background: linear-gradient(180deg, #3b6cf0, #2f5ad6); color: #fff; border-bottom-right-radius: 4px; }
+.cp-msg.lead-m { align-self: flex-start; background: rgba(255, 255, 255, .07); border: 1px solid var(--edge); border-bottom-left-radius: 4px; }
+.cp-msg.lead-m.key { border-color: rgba(243, 178, 122, .6); box-shadow: 0 0 0 1px rgba(243, 178, 122, .25), 0 0 24px rgba(243, 178, 122, .12); }
+.cp-file { display: inline-block; margin: 6px 6px 0 0; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--warm); color: var(--warm) !important; font-size: 12.5px; font-weight: 700; text-decoration: none !important; }
+.decide { display: none; gap: 6px; flex-wrap: wrap; padding: 10px; border-radius: 12px; background: rgba(243, 178, 122, .1); border: 1px solid rgba(243, 178, 122, .35); margin-bottom: 8px; }
+.decide.on { display: flex; animation: pop .35s ease both; }
+.decide p { width: 100%; margin: 0 0 4px; font-size: 12px; color: #ffd6ae; font-weight: 700; }
+.dbtn { flex: 1 1 auto; border: 0; border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; color: #fff; }
+.dbtn.yes { background: linear-gradient(180deg, #2fbf7f, #22a56b); }
+.dbtn.edit { background: linear-gradient(180deg, #5b7cf0, #4865d6); }
+.dbtn.no { background: linear-gradient(180deg, #ef5b5b, #d64444); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.chip { border: 1px solid var(--edge); background: rgba(255, 255, 255, .05); color: var(--ink2); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.chip:hover { color: var(--ink); border-color: var(--warm); }
+.cp-form { display: flex; gap: 6px; align-items: flex-end; }
+.cp-form textarea { flex: 1; resize: none; min-height: 44px; max-height: 140px; padding: 9px 11px; border-radius: 12px; border: 1px solid var(--edge); background: rgba(0, 0, 0, .25); color: var(--ink); font: inherit; font-size: 14px; }
+.cp-form button { border: 0; border-radius: 12px; padding: 11px 14px; background: linear-gradient(180deg, #f3b27a, #e08560); color: #1b1206; font: inherit; font-weight: 800; cursor: pointer; }
+.cp-err { margin-top: 6px; font-size: 12.5px; color: #ffb3b3; }
+.cp-perm { display: none; margin-bottom: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 107, 107, .14); color: #ffd1d1; font-size: 12.5px; font-weight: 700; }
+.cp-perm.on { display: block; animation: pulseAlert 1.4s infinite; }
+
+/* /chat 단독 화면 */
+.chatpage { max-width: 860px; margin: 0 auto; padding: 18px 16px; }
+.chatpage .boss { position: static; height: calc(100vh - 110px); }
+
+/* [구역] meeting.html 과 meeting.js 가 만든 자리·빛줄기·말풍선·회의록 */
+/* ---------- 회의실 ---------- */
+.meeting { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; max-width: 1440px; margin: 0 auto; padding: 18px 16px 40px; }
+.mroom { position: relative; padding: 16px; overflow: hidden; }
+.mroom-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.mroom-top h2 { margin: 0; font-size: 18px; }
+.mstate { font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, .07); color: var(--ink2); }
+.mstate.live { background: rgba(61, 220, 151, .15); color: var(--ok); }
+.mstate.live::before { content: "● "; animation: blink 1.4s infinite; }
+.mstate.replay { background: rgba(91, 140, 255, .18); color: #a9c1ff; }
+.replay { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.replay select, .replay button { border: 1px solid var(--edge); background: rgba(255, 255, 255, .06); color: var(--ink); border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; max-width: 220px; }
+.replay button.on { border-color: var(--warm); color: var(--warm); }
+.mstage { position: relative; display: grid; grid-template-columns: 1fr 250px; gap: 14px; }
+.tablewrap { position: relative; aspect-ratio: 16 / 11; border-radius: 18px; overflow: hidden;
+  background: radial-gradient(60% 55% at 50% 52%, rgba(243, 178, 122, .10), transparent 70%), repeating-linear-gradient(45deg, rgba(255, 255, 255, .015) 0 14px, transparent 14px 28px), #0d1428; }
+.tablewrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* 자리 위치는 SVG transform(translate)이 정하고, 커지는 효과는 안쪽 그룹(.in)에만 준다 */
+.seat .in { transition: transform .45s cubic-bezier(.2, 1.3, .4, 1); transform-box: fill-box; transform-origin: center; }
+/* 말하는 사람: meeting.js 의 speak() 가 class speak 를 붙이면 1.16배로 커지고 고리가 빛난다. */
+.seat.speak .in { transform: scale(1.16); }
+.seat .ring { opacity: 0; }
+.seat.speak .ring { opacity: 1; animation: ringPulse 1s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.seat.listen .ring2 { opacity: 1; }
+.seat .ring2 { opacity: 0; transition: opacity .3s; }
+@keyframes ringPulse { from { transform: scale(.9); opacity: .9 } to { transform: scale(1.35); opacity: 0 } }
+.idle-room .seat .body { animation: breathe 4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.beam { fill: none; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 8 10; animation: dash .8s linear infinite; filter: url(#glow); }
+@keyframes dash { to { stroke-dashoffset: -36 } }
+.mbubble { position: absolute; z-index: 5; max-width: 42%; padding: 9px 12px; border-radius: 14px; background: #fff7ee; color: #1b1f2c; font-size: 13px; line-height: 1.5;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .5); animation: pop .35s cubic-bezier(.2, 1.4, .4, 1) both; }
+.mbubble b { display: block; font-size: 11px; margin-bottom: 2px; }
+.mbubble .tag { font-size: 10.5px; font-weight: 800; padding: 1px 6px; border-radius: 6px; margin-left: 4px; color: #fff; }
+.whiteboard { padding: 12px 14px; border-radius: 14px; background: linear-gradient(180deg, #f7f6f2, #e9e6df); color: #1f2328; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); font-size: 13px; align-self: start; }
+.whiteboard h3 { margin: 0 0 4px; font-size: 14px; }
+.whiteboard ol { margin: 6px 0 0; padding-left: 1.2em; }
+.whiteboard .stage-now { display: inline-block; margin-top: 4px; font-size: 11.5px; font-weight: 800; padding: 1px 8px; border-radius: 6px; background: #e08560; color: #fff; }
+.sticky { margin-top: 10px; padding: 8px 10px; background: #fff3a6; color: #3d3410; border-radius: 4px; box-shadow: 0 4px 10px rgba(0, 0, 0, .2); transform: rotate(-1.2deg); font-size: 12.5px; }
+.sticky + .sticky { transform: rotate(1deg); }
+.minutes { display: flex; flex-direction: column; padding: 14px; height: calc(100vh - 96px); min-height: 520px; position: sticky; top: 72px; }
+.minutes h2 { margin: 0 0 8px; font-size: 16px; }
+.mlog { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; scroll-behavior: smooth; }
+.mrow { padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, .05); border-left: 3px solid var(--c, #888); font-size: 12.5px; animation: pop .3s ease both; }
+.mrow .who { font-weight: 800; font-size: 12px; }
+.mrow .who i { font-style: normal; color: var(--ink2); font-weight: 600; }
+.mrow .txt { white-space: pre-wrap; color: #d9deeb; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.mrow.now { background: rgba(243, 178, 122, .12); }
+.cat { font-size: 10.5px; font-weight: 800; padding: 1px 6px; border-radius: 6px; margin-left: 4px; }
+.cat-지시 { background: #e08560; color: #fff; }
+.cat-보고 { background: #2fbf7f; color: #fff; }
+.cat-의논 { background: #5b7cf0; color: #fff; }
+.cat-알림 { background: #59607a; color: #fff; }
+.legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink2); margin-bottom: 8px; }
+
+/* ---------- 반응형 ---------- */
+@media (max-width: 1180px) {
+  .desks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 980px) {
+  .office, .meeting { grid-template-columns: minmax(0, 1fr); }
+  .boss, .minutes { position: static; height: 560px; }
+  .mstage { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .desks { grid-template-columns: minmax(0, 1fr); }
+  body.night header nav { overflow-x: auto; white-space: nowrap; flex-wrap: nowrap; scrollbar-width: none; }
+  .floor, .mroom { padding: 12px; }
+  .source { margin-left: 0; }
+  .mbubble { max-width: 70%; font-size: 12px; }
+  .replay { margin-left: 0; }
+}
+
+/* 운영체제의 "동작 줄이기"가 켜져 있으면 움직임을 거의 멈춘다. office.js·meeting.js 의 reduce 변수도 같은 설정을 본다. */
+/* 동작 줄이기 설정을 켠 사람에게는 움직임을 최소로 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

@@ -1,0 +1,68 @@
+<!doctype html>
+<!--/*
+  [1] 역할
+      직원 현황 화면(GET /team)의 템플릿이다. 최근 2분 안에 활동한 팀원과, 지금까지 생긴 팀원 표를 보여 준다.
+      이 파일의 주석은 타임리프 전용 주석이다(docs/용어-풀이.md 의 "타임리프 주석"). 타임리프가 HTML 을 만들 때 지우므로 브라우저(F12)에는 보이지 않는다.
+  
+  [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+      받는 것 : model  active = [TeamMember …], members = [TeamMember …]
+      내보내는 것 (실제 HTML 한 줄)
+        <tr>
+          <td><b>지훈</b> <span class="muted">jihun</span></td>
+          <td>자료 조사</td>
+          <td class="muted">session-6e85352f</td>
+          <td class="muted">11-09 20:32:22</td>
+          <td class="muted">6시간 전</td>
+        </tr>
+  
+  [3] 앞뒤 파일
+      controller/DashboardController.java 의 team()  →  (이 파일)  →  controller/ViewHelpers.java (${@fmt.time}, ${@fmt.ago})
+  
+  [4] 메서드 목록
+      구역                 하는 일                         흐름 번호
+      지금 일하는 직원      active 마다 한 줄                흐름 A-④
+      지금까지 생긴 팀원    members 마다 표 한 줄            흐름 A-④
+      script               10초마다 새로고침
+  
+  [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+      th:each, th:if, th:text, ${@fmt.…}
+  
+  [6] 읽는 순서
+      첫 카드 → 표 → script
+  
+  [7] 다 읽고 확인
+      - "처음 생김" 칸의 시각은 어느 시간대로 적히는가? (서버 시간대. ViewHelpers 의 ZoneId.systemDefault())
+      - 팀원이 한 명도 없으면 표에는 무엇이 보이는가? (머리줄만)
+*/-->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head th:replace="~{fragments :: head('직원 현황')}"></head>
+<body>
+<header th:replace="~{fragments :: header}"></header>
+<main>
+  <div class="card">
+    <b>👥 지금 일하는 직원 (최근 2분)</b>
+    <!--/* active 가 비어 있을 때만 "쉬는 중". */-->
+    <p class="muted" th:if="${active.isEmpty()}">지금은 쉬는 중이에요.</p>
+    <!--/* 결과 예) <div><span class="dot"></span><b>지훈</b> <span class="muted">자료 조사 · 6시간 전 활동</span></div> */-->
+    <div th:each="m : ${active}"><span class="dot"></span><b th:text="${m.koreanName()}"></b> <span class="muted" th:text="${m.role} + ' · ' + ${@fmt.ago(m.lastActive)} + ' 활동'"></span></div>
+  </div>
+  <div class="card">
+    <b>📋 지금까지 생긴 팀원</b>
+    <table>
+      <tr><th>이름</th><th>역할</th><th>팀(쭌의 세션)</th><th>처음 생김</th><th>마지막 활동</th></tr>
+      <!--/* [흐름 A-④] 팀원마다 표 한 줄. 위 [2] 의 실제 HTML 이 만들어진다. */-->
+      <tr th:each="m : ${members}">
+        <td><b th:text="${m.koreanName()}"></b> <span class="muted" th:text="${m.name}"></span></td>
+        <td th:text="${m.role}"></td>
+        <td class="muted" th:text="${m.teamName}"></td>
+        <!--/* ${@fmt.time(…)} = ViewHelpers.time().  결과) 11-09 20:32:22 */-->
+        <td class="muted" th:text="${@fmt.time(m.firstSeen)}"></td>
+        <td class="muted" th:text="${@fmt.ago(m.lastActive)}"></td>
+      </tr>
+    </table>
+  </div>
+</main>
+<!--/* 10초 뒤 이 탭을 보고 있으면 새로고침(GET /team 을 다시). */-->
+<script>setTimeout(function(){ if(!document.hidden) location.reload(); }, 10000);</script>
+</body>
+</html>

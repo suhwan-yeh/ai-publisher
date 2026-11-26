@@ -1,0 +1,59 @@
+<!doctype html>
+<!--/*
+  [1] 역할
+      로그인 화면(GET /login)의 템플릿이다. 서버(prod) 모드에서만 쓰인다.
+      폼을 보내면 POST /login 을 Spring Security 가 받아 아이디·비밀번호를 확인한다.
+      이 파일의 주석은 타임리프 전용 주석이다(docs/용어-풀이.md 의 "타임리프 주석"). 타임리프가 HTML 을 만들 때 지우므로 브라우저(F12)에는 보이지 않는다.
+  
+  [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+      내보내는 것  <form class="glass" … method="post" action="/login"> + 숨은 칸 <input type="hidden" name="_csrf" value="…">
+      틀렸을 때    POST /login → 302 Location: /login?error → 이 화면에 "아이디 또는 비밀번호가 맞지 않아요."
+      맞았을 때    POST /login → 302 Location: / (첫 화면)
+  
+  [3] 앞뒤 파일
+      config/SecurityConfig.java (로그인 규칙)  →  controller/LoginController.java  →  (이 파일)
+  
+  [4] 메서드 목록
+      구역            하는 일
+      폼              username, password 를 POST /login 으로
+      오류·로그아웃    주소에 ?error 또는 ?logout 이 있을 때만 안내 글
+  
+  [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+      th:action="@{…}"(CSRF 칸 자동), ${param.이름}
+  
+  [6] 읽는 순서
+      폼 → th:if 두 줄 → 입력칸
+  
+  [7] 다 읽고 확인
+      - 입력칸 이름(name)을 id 로 바꾸면 로그인이 되는가? (안 된다. Spring Security 는 username, password 이름을 읽는다)
+      - 이 폼에 숨은 _csrf 칸은 누가 넣는가?
+*/-->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>로그인 · 1인 AI 출판사</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/css/office.css">
+</head>
+<body class="night">
+<main style="max-width:380px;margin:12vh auto;padding:0 16px">
+  <!--/* th:action="@{/login}" : 보낼 주소. 서버 모드에서는 타임리프가 폼 안에 <input type="hidden" name="_csrf" value="토큰"> 을 자동으로 넣는다. */-->
+  <form class="glass" style="padding:24px" method="post" th:action="@{/login}">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="width:38px;height:38px;border-radius:10px;background:#e08560;color:#fff;display:grid;place-items:center;font-weight:800">C</div>
+      <b style="font-size:17px">1인 AI 출판사 · 사장님 로그인</b>
+    </div>
+    <!--/* ${param.error} : 주소의 ?error 값. 로그인이 틀리면 Spring Security 가 /login?error 로 보낸다. */-->
+    <p class="cp-err" th:if="${param.error}">아이디 또는 비밀번호가 맞지 않아요.</p>
+    <p class="muted" th:if="${param.logout}">로그아웃했어요.</p>
+    <label class="muted" for="u">아이디</label>
+    <!--/* name="username", name="password" : Spring Security 가 기본으로 읽는 폼 값 이름. */-->
+    <input id="u" name="username" autocomplete="username" required style="width:100%;margin:4px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.25);color:#e9ecf5;font:inherit">
+    <label class="muted" for="p">비밀번호</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required style="width:100%;margin:4px 0 16px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.25);color:#e9ecf5;font:inherit">
+    <button class="btn" type="submit" style="width:100%;padding:11px">들어가기</button>
+  </form>
+</main>
+</body>
+</html>

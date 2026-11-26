@@ -1,0 +1,77 @@
+# [1] 역할
+#     서버(라이트세일) 모드 설정. java -jar app.jar --spring.profiles.active=prod 로 켜면 application.yml 을 읽은 뒤 이 파일의 값으로 덮어쓴다.
+#     비밀값(DB 비밀번호, 로그인 비밀번호)은 여기 적지 않고 환경변수 ${…} 로 받는다.
+#
+# [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+#     받는 것  : 서버의 환경 파일 /etc/publisher/dashboard.env (권한 600) 의 PUBLISHER_DB_URL, PUBLISHER_DB_USER, PUBLISHER_DB_PASSWORD, BOSS_USERNAME, BOSS_PASSWORD
+#     내보내는 것: MySQL 연결, Flyway 로 표 만들기, 로그인 켜기, 127.0.0.1 에서만 받기
+#       로그인하지 않고 GET / → 302 Location: /login
+#
+# [3] 앞뒤 파일
+#     (이 파일)  →  db/migration/V1__init.sql (Flyway 가 실행)
+#     (이 파일)의 publisher.security.enabled: true  →  config/SecurityConfig.java
+#     publisher-kit/tepo/ 의 배포 스크립트가 환경 파일을 만들고 --spring.profiles.active=prod 로 켠다
+#
+# [4] 메서드 목록
+#     구역                     내 PC(application.yml) 와 다른 점
+#     spring.datasource        H2 파일 → MySQL (환경변수)
+#     spring.jpa ddl-auto      update → validate (표를 고치지 않고 확인만)
+#     spring.flyway            false → true (V1__init.sql 로 표를 만든다)
+#     spring.thymeleaf cache   false → true (빠르게)
+#     server                   127.0.0.1 에서만, 쿠키 secure·http-only
+#     publisher                로그인 켬, 쭌 없음 안내 문장, 읽기 간격 30초
+#
+# [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+#     프로필(profile), ${환경변수}, Flyway, ddl-auto: validate, 역방향 프록시(Caddy), forward-headers-strategy, secure 쿠키
+#
+# [6] 읽는 순서
+#     spring.datasource → spring.jpa → spring.flyway → server → publisher
+#
+# [7] 다 읽고 확인
+#     - 서버에서 엔티티에 필드를 더하고 V2 SQL 을 만들지 않으면 시작할 때 무슨 일이 생기는가? (validate 가 열이 없다고 실패한다)
+#     - address: 127.0.0.1 이면 인터넷에서 8080 으로 바로 들어올 수 있는가? (없다. Caddy 를 거쳐야 한다)
+# 서버(라이트세일) 설정 — java -jar app.jar --spring.profiles.active=prod
+# 비밀값은 여기 쓰지 않고 서버의 환경 파일(/etc/publisher/dashboard.env, 권한 600)에서 받습니다.
+#   PUBLISHER_DB_URL       jdbc:mysql://<라이트세일 DB 주소>:3306/publisher?sslMode=REQUIRED
+#   PUBLISHER_DB_USER      DB 사용자
+#   PUBLISHER_DB_PASSWORD  DB 비밀번호
+#   BOSS_USERNAME          관리 화면 로그인 아이디
+#   BOSS_PASSWORD          관리 화면 로그인 비밀번호 (8자 이상)
+spring:
+  datasource:
+    # 기본값이 없다. 환경변수가 없으면 시작할 때 오류로 멈춘다(비밀값을 파일에 남기지 않으려고).
+    url: ${PUBLISHER_DB_URL}
+    username: ${PUBLISHER_DB_USER}
+    password: ${PUBLISHER_DB_PASSWORD}
+  jpa:
+    hibernate:
+      # 표는 Flyway 가 만들고, JPA 는 엔티티와 표가 맞는지 확인만 한다
+      # validate: 엔티티와 표가 맞는지만 확인한다. 맞지 않으면 시작이 실패한다. 표를 직접 고치지 않는다.
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    # Flyway 가 읽을 SQL 폴더 = src/main/resources/db/migration. 이미 실행한 파일은 flyway_schema_history 표에 기록돼 다시 실행하지 않는다.
+    locations: classpath:db/migration
+  thymeleaf:
+    cache: true
+
+server:
+  # 바깥에서는 Caddy(HTTPS)를 거쳐서만 들어온다
+  # 이 서버 컴퓨터 안에서 오는 요청만 받는다. 바깥 요청은 Caddy 가 HTTPS 로 받아 127.0.0.1:8080 으로 넘긴다.
+  address: 127.0.0.1
+  # Caddy 가 붙인 X-Forwarded-Proto 등을 읽어, 원래 요청이 https 였음을 안다. 없으면 redirect 주소가 http:// 로 만들어진다.
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        # secure: HTTPS 로만 쿠키를 보낸다.  http-only: 자바스크립트가 세션 쿠키를 읽지 못하게 한다.
+        secure: true
+        http-only: true
+
+publisher:
+  security:
+    enabled: true
+  # 1단계 배포에는 서버에 AI 팀이 없어서 주문을 받을 수 없음 (2단계에서 팀을 서버로 옮김)
+  # 이 문장이 FakechatClient 의 두 번째 @Value 로 들어간다. 서버에는 쭌이 없어 보내기는 503 + 이 문장이 된다.
+  offline-message: "이 서버에는 아직 AI 팀(쭌)이 없어요. 주문은 내 PC의 관리 화면에서 해 주세요. 서버에 팀을 두는 것은 다음 단계예요."
+  scan-interval-ms: 30000

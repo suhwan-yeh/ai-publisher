@@ -1,0 +1,10 @@
+# Windows에서 커밋·복제해도 리눅스 실행 파일의 줄바꿈이 바뀌지 않게 LF로 고정
+*.sh text eol=lf
+publisher-dashboard/gradlew text eol=lf
+publisher-kit/tepo/mock/* text eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.pdf binary
+*.epub binary
+*.png binary
+*.jpg binary

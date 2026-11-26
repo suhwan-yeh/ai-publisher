@@ -1,0 +1,100 @@
+<!doctype html>
+<!--/*
+  [1] 역할
+      사무실 화면(GET /office)의 템플릿이다. 서버는 빈 틀(책상이 들어갈 자리)과 사장실 대화 패널만 그린다.
+      책상·봉투·출근부는 office.js 가 GET /api/office 응답으로 채운다(흐름 E). 그래서 이 파일에는 th:each 가 거의 없다.
+      이 파일의 주석은 타임리프 전용 주석이다(docs/용어-풀이.md 의 "타임리프 주석"). 타임리프가 HTML 을 만들 때 지우므로 브라우저(F12)에는 보이지 않는다.
+  
+  [2] 받는 것 → 내보내는 것 (실제로 실행해서 얻은 값)
+      받는 것 : model  messages, online (사장실 대화 패널용)
+      내보내는 것 : id 만 있고 속이 빈 요소들 + 대화 패널 + script 세 개
+        <div class="desks" id="desks"></div>          ← office.js 가 책상을 넣는다
+        <tbody id="roster"></tbody>                    ← office.js 가 출근부 줄을 넣는다
+        <script src="/js/people.js"></script> <script src="/js/chatpanel.js"></script> <script src="/js/office.js"></script>
+  
+  [3] 앞뒤 파일
+      controller/OfficePageController.java 의 office()  →  (이 파일)  →  fragments.html 의 header, chatpanel
+      (이 파일)의 script  →  static/js/people.js → chatpanel.js → office.js  →  GET /api/office (흐름 E-②)
+  
+  [4] 메서드 목록
+      구역                       id                         채우는 곳
+      위쪽 책·단계·점검          bk-title, stages, checks     office.js updateTop()
+      허용 기다림 안내            alert                       office.js updateTop()
+      편집장실·팀 책상·서버실     lead-slot, desks, ops-desks  office.js buildDesk()
+      출근부                     roster                       office.js updateRoster()
+      사장실 대화                 cp (조각)                   chatpanel.js
+      확대 창                     modal, m-term               office.js openScreen()
+      봉투가 나는 층              fx                          office.js fly()
+  
+  [5] 먼저 알 용어 (자세한 설명: docs/용어-풀이.md)
+      th:replace, th:if, th:content, id 와 getElementById, <script src> 순서, role="dialog"
+  
+  [6] 읽는 순서
+      <main> 의 id 들 → 확대 창 → script 세 줄
+  
+  [7] 다 읽고 확인
+      - script 세 줄의 순서를 office.js → people.js 로 바꾸면 무엇이 깨지는가? (office.js 의 window.Publisher 가 아직 없다)
+      - 사무실 화면을 처음 받은 HTML 에 직원 이름이 있는가? (없다. JSON 을 받은 뒤 그린다)
+*/-->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>사무실 · 1인 AI 출판사</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/css/office.css">
+  <!-- 서버 모드(로그인)에서만 생김: fetch 로 POST 할 때 CSRF 토큰을 헤더에 실어 보냄 -->
+  <!--/* 서버 모드에서만: 사장실 대화 패널의 보내기(POST)가 쓸 CSRF 토큰. */-->
+  <meta name="_csrf" th:if="${_csrf != null}" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:if="${_csrf != null}" th:content="${_csrf.headerName}">
+</head>
+<body class="night">
+<header th:replace="~{fragments :: header}"></header>
+<main class="office">
+  <section class="floor glass" id="floor">
+    <div class="topbar">
+      <!--/* [흐름 E-⑧] id 가 있는 빈 자리들. office.js 가 $('bk-title') 처럼 찾아 글을 넣는다. 처음 글("아직 주문이 없어요", "연결 중…")은 첫 응답 전까지 보인다. */-->
+      <div class="book"><small>지금 만드는 책</small><span id="bk-title">아직 주문이 없어요</span></div>
+      <div class="stages" id="stages"></div>
+      <div class="checks4" id="checks"></div>
+      <span class="source" id="source" title="책상 화면을 어디서 읽는지">연결 중…</span>
+    </div>
+    <div class="alert" id="alert">⚠️ 쭌이 허용을 기다려요 — 우분투 창의 쭌 칸에서 골라 주세요</div>
+    <div class="lead-room"><span class="label">EDITOR-IN-CHIEF · 편집장실</span><div id="lead-slot"></div></div>
+    <!--/* 책 팀 책상 자리. 실제 응답에 직원이 4명이면 office.js 가 <div class="desk …"> 4개를 넣는다. */-->
+    <div class="desks" id="desks"></div>
+    <!--/* 서버실은 hidden(숨김). team 이 "ops" 인 직원(테포)이 응답에 있으면 office.js 가 hidden 을 끈다. */-->
+    <div class="server-room" id="server-room" hidden><span class="label">SERVER ROOM · 서버실</span><div class="desks" id="ops-desks"></div></div>
+    <div class="glass roster">
+      <b>🗓 출근부</b> <span class="muted" style="font-size:12px">책상을 누르면 그 사람의 화면을 크게 볼 수 있어요</span>
+      <table>
+        <thead><tr><th>이름</th><th>맡은 일</th><th>상태</th><th>마지막 활동</th><th>보낸 메시지</th></tr></thead>
+        <tbody id="roster"></tbody>
+      </table>
+    </div>
+  </section>
+  <!--/* 대화방과 같은 대화 패널 조각. 그래서 chatpanel.js 도 함께 불러온다. */-->
+  <section th:replace="~{fragments :: chatpanel}"></section>
+</main>
+
+<!--/* 책상을 누르면 열리는 확대 창. role="dialog" = 화면 읽기 프로그램에 "대화 창(dialog)"이라고 알린다. */-->
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+  <div class="box glass">
+    <header><b id="m-title">화면</b><span class="pill" id="m-status"></span><button class="icon-btn" id="m-close" type="button">닫기 ✕</button></header>
+    <pre class="term" id="m-term"></pre>
+  </div>
+</div>
+<!--/* 봉투·꼬리 점이 그려지는 층. 화면 전체 위에 겹쳐 있다. */-->
+<div class="fx" id="fx" style="position:fixed"></div>
+
+<!--/*
+  순서가 중요하다.
+  (1) people.js   window.Publisher 를 만든다(다른 두 파일이 쓴다)
+  (2) chatpanel.js 대화 패널. 새 메시지가 오면 chat:new 이벤트를 보낸다
+  (3) office.js   P.ready 를 기다렸다가 2초 폴링을 시작하고 chat:new 를 받는다
+*/-->
+<script src="/js/people.js"></script>
+<script src="/js/chatpanel.js"></script>
+<script src="/js/office.js"></script>
+</body>
+</html>

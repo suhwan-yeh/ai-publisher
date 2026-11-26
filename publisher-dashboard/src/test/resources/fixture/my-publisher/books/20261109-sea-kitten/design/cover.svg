@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2f66"/>
+      <stop offset="0.6" stop-color="#3e5fa8"/>
+      <stop offset="1" stop-color="#f6c28b"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="900" fill="url(#sky)"/>
+
+  <!-- 별 -->
+  <g fill="#fff7d6">
+    <circle cx="70" cy="330" r="3"/>
+    <circle cx="150" cy="380" r="2"/>
+    <circle cx="520" cy="320" r="3"/>
+    <circle cx="450" cy="400" r="2"/>
+    <circle cx="300" cy="350" r="2.5"/>
+    <circle cx="560" cy="430" r="2"/>
+    <circle cx="40" cy="440" r="2"/>
+  </g>
+
+  <!-- 달 -->
+  <circle cx="480" cy="480" r="38" fill="#fff3c4"/>
+
+  <!-- 바다 -->
+  <path d="M0 640 Q75 615 150 640 T300 640 T450 640 T600 640 L600 900 L0 900 Z" fill="#2c6fa8"/>
+  <path d="M0 700 Q75 675 150 700 T300 700 T450 700 T600 700 L600 900 L0 900 Z" fill="#245d92"/>
+  <path d="M0 765 Q75 740 150 765 T300 765 T450 765 T600 765 L600 900 L0 900 Z" fill="#1d4b78"/>
+
+  <!-- 배 -->
+  <path d="M190 620 L410 620 L380 675 L220 675 Z" fill="#c4553b"/>
+  <rect x="290" y="565" width="70" height="55" rx="6" fill="#fff6e8"/>
+  <rect x="305" y="580" width="16" height="16" rx="3" fill="#7fb7e6"/>
+  <rect x="330" y="580" width="16" height="16" rx="3" fill="#7fb7e6"/>
+
+  <!-- 고양이 -->
+  <ellipse cx="240" cy="590" rx="30" ry="26" fill="#fffaf0"/>
+  <circle cx="240" cy="552" r="24" fill="#fffaf0"/>
+  <polygon points="220,538 224,512 238,532" fill="#fffaf0"/>
+  <polygon points="260,538 256,512 242,532" fill="#fffaf0"/>
+  <circle cx="232" cy="552" r="3" fill="#33281f"/>
+  <circle cx="248" cy="552" r="3" fill="#33281f"/>
+  <polygon points="240,558 236,562 244,562" fill="#f2a1a1"/>
+  <!-- 주황 구명조끼 -->
+  <path d="M215 580 Q240 600 265 580 L268 603 Q240 616 212 603 Z" fill="#ff8a1f"/>
+
+  <!-- 제목 -->
+  <g font-family="sans-serif" text-anchor="middle" font-weight="bold">
+    <text x="300" y="140" font-size="58" fill="#fffaf0">바다를 건너는</text>
+    <text x="300" y="215" font-size="58" fill="#ffd36e">아기 고양이</text>
+  </g>
+
+  <!-- 부제 -->
+  <text x="300" y="275" font-family="sans-serif" font-size="24" fill="#e8f0ff" text-anchor="middle">작은 발로 떠난 따뜻한 바닷길 이야기</text>
+
+  <!-- 출판사 -->
+  <text x="300" y="860" font-family="sans-serif" font-size="26" fill="#fffaf0" text-anchor="middle">그린데스크 출판사</text>
+</svg>
